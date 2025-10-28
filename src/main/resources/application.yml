@@ -16,5 +16,5 @@ spring:
     open-in-view: false # Recommended for better performance and transaction management
 limits-settings:
   default-client-limit: 100000
-  cancel-limit-delay: 3 # minutes
+  cancel-limit-delay: 3000 # millisecs
   page-size: 2

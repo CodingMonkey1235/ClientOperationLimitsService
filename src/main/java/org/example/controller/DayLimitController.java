@@ -21,12 +21,12 @@ public class DayLimitController {
     private final HoldOperationAmountService holdOperationAmountService;
 
     @PostMapping(value = "/hold/")
-    public HoldOperationAmountResponseDto holdOperationAmount(HoldOperationAmountRequestDto requestDto) {
+    public HoldOperationAmountResponseDto holdOperationAmount(@RequestBody HoldOperationAmountRequestDto requestDto) {
         return holdOperationAmountService.holdOperationAmount(requestDto);
     }
 
     @PostMapping(value = "/accept/")
-    public HoldOperationAmountResponseDto acceptDayLimitOperation(AcceptOperationAmountRequestDto requestDto) {
+    public HoldOperationAmountResponseDto acceptDayLimitOperation(@RequestBody AcceptOperationAmountRequestDto requestDto) {
         return holdOperationAmountService.acceptDayLimitOperation(requestDto);
     }
 

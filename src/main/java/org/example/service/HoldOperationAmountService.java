@@ -7,10 +7,7 @@ import org.example.dto.clientsLimitsDto.HoldOperationAmountResponseDto;
 import org.example.dto.clientsLimitsDto.AcceptOperationAmountRequestDto;
 import org.example.entity.DayLimit;
 import org.example.entity.PendingOperation;
-import org.example.exception.NoSuchClientLimitException;
 import org.example.exception.NoSuchPendingException;
-import org.example.holdClientLimitJobExecutor.HoldClientLimitTask;
-import org.example.holdClientLimitJobExecutor.HoldClientLimitJobExecutor;
 import org.example.repository.DayLimitsRepository;
 import org.example.repository.PendingOperationRepository;
 import org.slf4j.Logger;
@@ -23,7 +20,6 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.ZonedDateTime;
-import java.util.NoSuchElementException;
 import java.util.UUID;
 
 @RequiredArgsConstructor
@@ -33,9 +29,11 @@ public class HoldOperationAmountService {
     private static final Logger log = LoggerFactory.getLogger(HoldOperationAmountService.class);
     private final DayLimitsRepository clientsLimitsRepository;
     private final DayLimitsConfiguration dayLimitsConfiguration;
-    private final HoldClientLimitJobExecutor holdClientLimitJobExecutor;
     private final PendingOperationRepository pendingClientLimitRepository;
 
+    /**
+     * Резервирование лимита для операции и списание основного лимита
+     */
     public HoldOperationAmountResponseDto holdOperationAmount(HoldOperationAmountRequestDto requestDto) {
         long clientId = requestDto.clientId();
         BigDecimal holdAmount = requestDto.holdAmount();
@@ -57,12 +55,8 @@ public class HoldOperationAmountService {
             pendingClientLimit.setDateCreated(ZonedDateTime.now());
             PendingOperation saved = pendingClientLimitRepository.save(pendingClientLimit);
 
-            UUID uuid = saved.getId();
-
-            HoldClientLimitTask holdClientLimitJob = new HoldClientLimitTask(uuid, clientId, this);
-            holdClientLimitJobExecutor.addTask(uuid, holdClientLimitJob);
-
-            return new HoldOperationAmountResponseDto(uuid.toString(), "SUCCESS", null);
+            String uuid = saved.getId().toString();
+            return new HoldOperationAmountResponseDto(uuid, "SUCCESS", null);
         }
     }
 
@@ -73,35 +67,19 @@ public class HoldOperationAmountService {
         return clientLimit;
     }
 
-    public void cancelHoldClientLimitAfterTimeout(long clientId, BigDecimal clientLimit) {
-        DayLimit clientLimitEntity = clientsLimitsRepository.findById(clientId).orElseThrow(NoSuchElementException::new);
-        clientLimitEntity.setDayLimit(clientLimit);
-    }
-
-    public void cancelPendingLimitAfterTimeout(long clientId, UUID operationId) {
-        PendingOperation pendingClientLimit = pendingClientLimitRepository.findById(operationId).orElseThrow(NoSuchClientLimitException::new);
-        DayLimit clientLimitEntity = clientsLimitsRepository.findById(clientId).orElseThrow(NoSuchPendingException::new);
-        BigDecimal recoveredLimit = clientLimitEntity.getDayLimit().add(pendingClientLimit.getOperationAmount());
-        BigDecimal defaultClientLimit = dayLimitsConfiguration.getDefaultClientLimit();
-
-        // для случаев если дневной лимит уже обновился во время резерва и при отмене операции
-        // лимит не может быть больше 100_000, если подтверждение лимита пришло после 00:00 списывает лимит нового дня
-        if (defaultClientLimit.compareTo(recoveredLimit) < 0) {
-            clientLimitEntity.setDayLimit(defaultClientLimit);
-        } else {
-            clientLimitEntity.setDayLimit(recoveredLimit);
-        }
-    }
-
+    /**
+     * Подтверждение списания лимита. Очищение зарезервированого лимита для операции.
+     */
     public HoldOperationAmountResponseDto acceptDayLimitOperation(AcceptOperationAmountRequestDto requestDto) {
         UUID uuid = UUID.fromString(requestDto.operationId());
-        holdClientLimitJobExecutor.cancelTask(uuid);
         pendingClientLimitRepository.findById(uuid).ifPresent(pendingClientLimitRepository::delete);
         return new HoldOperationAmountResponseDto(uuid.toString(), "SUCCESS", null);
     }
 
-    // каждый провежуток времени очищаем не подтвержденные списания лимита
-    @Scheduled(fixedDelay = 1000)
+    /**
+     * Каждый промежуток времени очищаем не подтвержденные операции списания лимита
+     */
+    @Scheduled(fixedDelayString = "${limits-settings.cancel-limit-delay}")
     public void cleanNotAcceptedOperations() {
         int pageSize = dayLimitsConfiguration.getPageSize();
         int currentPage = 0;
@@ -112,10 +90,21 @@ public class HoldOperationAmountService {
             PageRequest pageRequest = PageRequest.of(currentPage, pageSize);
             Page<PendingOperation> nextPage = pendingClientLimitRepository.findAll(pageRequest);
             for (PendingOperation operation : nextPage.getContent()) {
-                System.out.println(operation.toString());
-
                 long deltaMinutes = Duration.between(operation.getDateCreated(), ZonedDateTime.now()).toMinutes();
                 if (deltaMinutes > dayLimitsConfiguration.getCancelLimitDelay()) {
+                    long dayLimitId = operation.getDayLimitId();
+                    DayLimit dayLimitEntity = clientsLimitsRepository.findById(dayLimitId).orElseThrow(NoSuchPendingException::new);
+                    BigDecimal recoveredLimit = dayLimitEntity.getDayLimit().add(operation.getOperationAmount());
+                    BigDecimal defaultClientLimit = dayLimitsConfiguration.getDefaultClientLimit();
+
+                    // для случаев если дневной лимит уже обновился во время резерва и при отмене операции
+                    // лимит не может быть больше 100_000, если подтверждение лимита пришло после 00:00 списывает лимит нового дня
+                    if (defaultClientLimit.compareTo(recoveredLimit) < 0) {
+                        dayLimitEntity.setDayLimit(defaultClientLimit);
+                    } else {
+                        dayLimitEntity.setDayLimit(recoveredLimit);
+                    }
+                    clientsLimitsRepository.save(dayLimitEntity);
                     pendingClientLimitRepository.delete(operation);
                 }
             }
@@ -123,8 +112,9 @@ public class HoldOperationAmountService {
         }
     }
 
-    // в 00:00:00 обновляем дневные лимиты
-    // выбрана логика учитываем лимиты по факту обновления
+    /**
+     * В 00:00:00 обновляем дневные лимиты, выбрана логика учитываем лимиты по факту обновления
+     */
     @Scheduled(cron = "0 0 * * *")
     public void resetClientDailyLimit() {
         int pageSize = dayLimitsConfiguration.getPageSize();

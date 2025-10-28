@@ -3,6 +3,7 @@ package org.example.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.GenericGenerator;
 
 import java.math.BigDecimal;
 import java.time.ZonedDateTime;
@@ -13,8 +14,8 @@ import java.util.UUID;
 @Getter @Setter
 public class PendingOperation {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id")
+    @GeneratedValue(generator = "uuid2")
+    @Column(name = "id", columnDefinition = "uuid")
     private UUID id;
 
     @Column(name = "day_limit_id")
