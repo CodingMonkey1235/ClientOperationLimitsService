@@ -2,9 +2,8 @@ package org.example.holdClientLimitJobExecutor;
 
 import lombok.Getter;
 import lombok.Setter;
-import org.example.service.ClientsLimitsService;
+import org.example.service.HoldOperationAmountService;
 
-import java.math.BigDecimal;
 import java.util.UUID;
 
 @Getter @Setter
@@ -13,19 +12,19 @@ public class HoldClientLimitTask implements Runnable {
     private UUID operationId;
     private long clientId;
     private Boolean isCancelled = false;
-    private ClientsLimitsService clientsLimitsService;
+    private HoldOperationAmountService holdOperationAmountService;
 
-    public HoldClientLimitTask(UUID operationId, long clientId, ClientsLimitsService clientsLimitsService) {
+    public HoldClientLimitTask(UUID operationId, long clientId, HoldOperationAmountService holdOperationAmountService) {
         this.operationId = operationId;
         this.clientId = clientId;
-        this.clientsLimitsService = clientsLimitsService;
+        this.holdOperationAmountService = holdOperationAmountService;
     }
 
     @Override
     public void run() {
-        if (isCancelled || clientsLimitsService == null) {
+        if (isCancelled || holdOperationAmountService == null) {
             return;
         }
-        clientsLimitsService.cancelPendingLimitAfterTimeout(clientId, operationId);
+        holdOperationAmountService.cancelPendingLimitAfterTimeout(clientId, operationId);
     }
 }

@@ -1,6 +1,6 @@
 package org.example.holdClientLimitJobExecutor;
 
-import org.example.config.ClientsLimitsConfiguration;
+import org.example.config.DayLimitsConfiguration;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -12,7 +12,7 @@ public class HoldClientLimitJobExecutor {
     private HashMap<UUID, ScheduledFuture> featureTasks = new HashMap<>();
     private HashMap<UUID, HoldClientLimitTask> runnableTasks = new HashMap<>();
 
-    private ClientsLimitsConfiguration clientsLimitsConfiguration;
+    private DayLimitsConfiguration clientsLimitsConfiguration;
 
     public HoldClientLimitJobExecutor() {}
 

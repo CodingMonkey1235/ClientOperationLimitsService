@@ -1,16 +1,12 @@
 package org.example.config;
 
-import org.example.repository.ClientsLimitsRepository;
+import org.example.repository.DayLimitsRepository;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@ComponentScan("org.example")
+@EnableConfigurationProperties(DayLimitsConfiguration.class)
 public class ApplicationConfiguration {
 
-    @Bean
-    public ClientsLimitsConfiguration clientsLimitsConfiguration(ClientsLimitsRepository clientsLimitsRepository) {
-        return new ClientsLimitsConfiguration();
-    }
 }
